@@ -50,7 +50,9 @@ export class Room {
     const host = this.state.getWebSockets('host')[0];
 
     if (role === 'host') {
-      if (host) return this.refuse(client, server, 'taken');
+      // A new host replaces an old one: after a crash or reload the old socket can linger for a while,
+      // and the returning host must not be locked out of its own room.
+      if (host) { try { host.close(1012, 'replaced'); } catch (e) {} }
       this.state.acceptWebSocket(server, ['host']);
       server.send(JSON.stringify({ t: 'ready' }));
       return new Response(null, { status: 101, webSocket: client });
@@ -100,7 +102,7 @@ export class Room {
     try { ws.close(code && code !== 1005 && code !== 1006 ? code : 1000, 'bye'); } catch (e) {}
     if (tags.includes('host')) {
       // The host left: send everyone home. Guests try to reconnect by themselves.
-      for (const s of this.state.getWebSockets()) { if (s !== ws) { try { s.close(1012, 'host left'); } catch (e) {} } }
+      for (const s of this.state.getWebSockets()) { if (s !== ws && !this.state.getTags(s).includes('host')) { try { s.close(1012, 'host left'); } catch (e) {} } }
       return;
     }
     const tag = tags.find(t => t.startsWith('g:'));
